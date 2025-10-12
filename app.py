@@ -275,4 +275,5 @@ st.markdown("""
 - Gunakan mode layar penuh (F11) untuk tampilan optimal.
 """)
 
+
 st.caption("Aplikasi demo infografis prakiraan cuaca — data BMKG")
