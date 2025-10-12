@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 import plotly.express as px
 from datetime import datetime
+import numpy as np # Pustaka baru yang diperlukan
 
 # --- KONFIGURASI UTAMA ---
 st.set_page_config(page_title="Infografis Prakiraan Cuaca - BMKG", layout="wide")
@@ -87,6 +88,7 @@ refresh = st.sidebar.button("Ambil ulang data")
 
 st.sidebar.markdown("---")
 show_map = st.sidebar.checkbox("Tampilkan peta lokasi", value=True)
+show_windrose = st.sidebar.checkbox("Tampilkan Wind Rose (Angin)", value=True) # Tambahkan kontrol untuk Wind Rose
 show_table = st.sidebar.checkbox("Tampilkan tabel data mentah", value=False)
 
 # ==============================
@@ -225,23 +227,23 @@ timeline_show = timeline[cols_show]
 table_html = """
 <style>
 table.weather-table {
-  border-collapse: collapse;
-  width: 100%;
-  font-size: 14px;
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 14px;
 }
 table.weather-table th {
-  background-color: #1e88e5;
-  color: white;
-  text-align: center;
-  padding: 8px;
+    background-color: #1e88e5;
+    color: white;
+    text-align: center;
+    padding: 8px;
 }
 table.weather-table td {
-  border-bottom: 1px solid #ddd;
-  padding: 6px 8px;
-  text-align: center;
+    border-bottom: 1px solid #ddd;
+    padding: 6px 8px;
+    text-align: center;
 }
 table.weather-table tr:hover {
-  background-color: #f1f5fb;
+    background-color: #f1f5fb;
 }
 </style>
 <table class='weather-table'>
@@ -267,26 +269,76 @@ if show_map:
     except Exception as e:
         st.warning(f"Peta tidak tersedia: {e}")
 
-    # 🌪️ BAGIAN TAMBAHAN — WINDROSE
-    st.markdown("### 🌪️ Distribusi Arah & Kecepatan Angin (Windrose)")
-    try:
-        if "wd_deg" in df_sel.columns and "ws" in df_sel.columns:
-            fig_windrose = px.bar_polar(
-                df_sel,
-                r="ws",
-                theta="wd_deg",
-                color="ws",
-                color_continuous_scale="blues",
-                title="Windrose — Arah (°) vs Kecepatan (m/s)"
-            )
-            fig_windrose.update_traces(opacity=0.8)
-            fig_windrose.update_layout(polar=dict(radialaxis=dict(showticklabels=True, ticks="")),
-                                       showlegend=False)
-            st.plotly_chart(fig_windrose, use_container_width=True)
-        else:
-            st.info("Data arah dan kecepatan angin tidak tersedia untuk lokasi ini.")
-    except Exception as e:
-        st.warning(f"Gagal menampilkan windrose: {e}")
+# --- PENAMBAHAN FITUR WIND ROSE (MAWAR ANGIN) ---
+if show_windrose and not df_sel.empty:
+    st.markdown("---")
+    st.header("Wind Rose (Mawar Angin)")
+
+    # 1. Tentukan batas kecepatan angin (Wind Speed Bins)
+    # Satuan ws adalah m/s (meter per detik)
+    bins = [0.0, 1.5, 3.3, 5.5, 7.9, 10.7, np.inf] # Contoh bins berdasarkan Beaufort Scale dalam m/s
+    labels = ["Tenang (<1.5)", "Lemah (1.5-3.3)", "Sedang (3.3-5.5)", "Kuat (5.5-7.9)", "Sangat Kuat (7.9-10.7)", "Badai (>10.7)"]
+
+    # 2. Buat kolom kategori kecepatan angin
+    df_sel["ws_category"] = pd.cut(df_sel["ws"], bins=bins, labels=labels, right=False)
+    
+    # 3. Konversi arah angin (wd_deg) ke arah mata angin (misal: N, NE, E, dll.)
+    # Arah angin di Plotly untuk polar histogram harus dalam radian atau kategori,
+    # tetapi lebih mudah menggunakan derajat dan menentukan bins arah.
+    # Kita akan menggunakan derajat (0-360) dan biarkan Plotly menanganinya,
+    # atau kita bisa menggunakan kolom `wd_deg` langsung.
+    # Namun, untuk tampilan Wind Rose yang proper, kita perlu mengelompokkan `wd_deg`
+    
+    # Kelompokkan arah angin ke 16 arah mata angin (22.5 derajat per arah)
+    dir_bins = np.arange(-11.25, 360 + 11.25, 22.5)
+    dir_labels = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW", "N"]
+    
+    # Karena 360 derajat harus di 'N', kita tambahkan 11.25 ke semua nilai agar N(360) masuk ke bin 'N'.
+    # Kita buat fungsi custom untuk mengelompokkan arah N/360
+    def deg_to_dir(deg):
+        if pd.isna(deg): return None
+        # Tambah 11.25 dan modulo 360 agar 0 dan 360 masuk ke bin yang sama
+        idx = int(((deg + 11.25) % 360) / 22.5)
+        return dir_labels[idx]
+
+    df_sel["wd_direction"] = df_sel["wd_deg"].apply(deg_to_dir)
+    
+    # 4. Filter data yang NaN atau 0 pada kecepatan/arah
+    df_wind = df_sel.dropna(subset=["ws_category", "wd_direction"]).copy()
+    
+    if df_wind.empty:
+        st.warning("Tidak cukup data kecepatan dan arah angin untuk membuat Wind Rose.")
+    else:
+        # 5. Buat Wind Rose menggunakan Plotly Express (Polar Bar Chart)
+        # Sortir kategori kecepatan agar urutan legend-nya benar
+        category_order = labels[::-1] # Urutan dari Badai ke Tenang
+
+        fig_wr = px.bar_polar(
+            df_wind,
+            r=df_wind["ws_category"].apply(lambda x: 1), # Hitung frekuensi per kategori, setiap baris mewakili satu observasi
+            theta="wd_direction",
+            color="ws_category",
+            color_discrete_sequence=px.colors.sequential.Plasma_r,
+            category_orders={"color": category_order, "theta": dir_labels[:-1]}, # Urutan arah mata angin
+            title="Frekuensi Arah dan Kecepatan Angin"
+        )
+        
+        fig_wr.update_traces(hovertemplate="Arah: %{theta}<br>Kategori Kecepatan: %{color}<br>Frekuensi: %{r}<extra></extra>")
+        fig_wr.update_layout(
+            polar_radialaxis_ticks="inside",
+            polar_angularaxis_direction="clockwise",
+            polar_angularaxis_line_color='black',
+            polar_angularaxis_tickvals=[0, 22.5, 45, 67.5, 90, 112.5, 135, 157.5, 180, 202.5, 225, 247.5, 270, 292.5, 315, 337.5],
+            polar_angularaxis_ticktext=dir_labels[:-1],
+            # Mengatur 0 derajat ke Utara (N)
+            polar_angularaxis_rotation=90,
+            legend_title_text='Kecepatan Angin (m/s)',
+            height=600
+        )
+        
+        st.plotly_chart(fig_wr, use_container_width=True)
+# --- AKHIR PENAMBAHAN FITUR WIND ROSE ---
+
 
 if show_table:
     st.markdown("---")
