@@ -49,7 +49,7 @@ def flatten_cuaca_entry(entry):
         return pd.DataFrame()
     df = pd.DataFrame(rows)
     # Normalisasi kolom numerik
-    numeric_cols = ["t", "tcc", "tp", "wd_deg", "ws", "hu", "vs"]
+    numeric_cols = ["temperature", "tcc", "tp", "wd_deg", "ws", "hu", "vs"]
     for c in numeric_cols:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
@@ -277,3 +277,4 @@ st.markdown("""
 
 
 st.caption("Aplikasi demo infografis prakiraan cuaca — data BMKG")
+
