@@ -192,24 +192,20 @@ timeline = df_sel.sort_values(by="local_datetime_dt")[
     ["local_datetime_dt", "weather_desc", "t", "hu", "ws", "tp", "image"]
 ].copy()
 
-# Format waktu dan angka agar lebih rapi
 timeline["Waktu (Lokal)"] = timeline["local_datetime_dt"].dt.strftime("%d %b %Y %H:%M")
 timeline["Suhu (°C)"] = timeline["t"].apply(lambda x: f"{x:.1f}" if pd.notna(x) else "—")
 timeline["Kelembaban (%)"] = timeline["hu"].apply(lambda x: f"{x:.0f}" if pd.notna(x) else "—")
 timeline["Kecepatan Angin (m/s)"] = timeline["ws"].apply(lambda x: f"{x:.1f}" if pd.notna(x) else "—")
 timeline["Curah Hujan (mm)"] = timeline["tp"].apply(lambda x: f"{x:.1f}" if pd.notna(x) else "—")
 
-# Ganti ikon dengan elemen HTML
 timeline["Cuaca"] = timeline.apply(
     lambda r: f"<img src='{r['image']}' width='36' height='36' style='vertical-align:middle;margin-right:6px;'/> {r['weather_desc']}",
     axis=1
 )
 
-# Pilih kolom untuk ditampilkan
 cols_show = ["Waktu (Lokal)", "Cuaca", "Suhu (°C)", "Kelembaban (%)", "Kecepatan Angin (m/s)", "Curah Hujan (mm)"]
 timeline_show = timeline[cols_show]
 
-# Tampilkan sebagai tabel HTML yang rapi
 table_html = """
 <style>
 table.weather-table {
@@ -241,6 +237,47 @@ for _, r in timeline_show.iterrows():
 table_html += "</tbody></table>"
 
 st.markdown(table_html, unsafe_allow_html=True)
+
+# === Windrose Chart ===
+st.markdown("---")
+st.header("Diagram Mawar Angin (Windrose)")
+
+try:
+    if "wd_deg" in df_sel.columns and "ws" in df_sel.columns:
+        df_wr = df_sel.dropna(subset=["wd_deg", "ws"]).copy()
+        if not df_wr.empty:
+            fig_wr = go.Figure()
+            fig_wr.add_trace(go.Barpolar(
+                r=df_wr["ws"],
+                theta=df_wr["wd_deg"],
+                name="Arah & Kecepatan Angin",
+                marker_color="rgba(30,136,229,0.7)",
+                marker_line_color="rgba(30,136,229,1.0)",
+                marker_line_width=1,
+                opacity=0.8
+            ))
+            fig_wr.update_layout(
+                polar=dict(
+                    radialaxis=dict(title="Kecepatan (m/s)", visible=True),
+                    angularaxis=dict(
+                        direction="clockwise",
+                        rotation=90,
+                        tickmode="array",
+                        tickvals=[0, 45, 90, 135, 180, 225, 270, 315],
+                        ticktext=["U", "TL", "T", "TG", "S", "BD", "B", "BL"]
+                    )
+                ),
+                showlegend=False,
+                title="Distribusi Arah & Kecepatan Angin",
+                margin=dict(t=60, b=20, l=20, r=20)
+            )
+            st.plotly_chart(fig_wr, use_container_width=True)
+        else:
+            st.info("Data arah atau kecepatan angin tidak tersedia untuk periode ini.")
+    else:
+        st.info("Kolom 'wd_deg' dan 'ws' tidak ditemukan dalam data.")
+except Exception as e:
+    st.warning(f"Gagal membuat windrose: {e}")
 
 # Map
 if show_map:
