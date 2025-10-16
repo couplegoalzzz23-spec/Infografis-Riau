@@ -149,46 +149,48 @@ if not df_sel.empty:
         st.plotly_chart(px.bar(df_sel, x="local_datetime_dt", y="tp", title="Curah Hujan (mm)"), use_container_width=True)
 
 # =====================================
-# 🌬️ WINDROSE CHART (PROFESIONAL)
+# 🌬️ WINDROSE CHART (ENGLISH + KONTRAS)
 # =====================================
 st.markdown("---")
-st.header("Diagram Mawar Angin (Windrose)")
+st.header("Windrose Diagram — Wind Direction & Speed Distribution")
 
 try:
     if "wd_deg" in df_sel.columns and "ws" in df_sel.columns:
         df_wr = df_sel.dropna(subset=["wd_deg", "ws"]).copy()
         if not df_wr.empty:
-            bins_dir = np.arange(-11.25, 360, 22.5)  # 17 nilai, 16 label
-            labels_dir = [
-                "U", "UT", "TL", "TLT", "T", "TGS", "TG", "TGB",
-                "S", "SBD", "BD", "BDB", "B", "BUL", "UL", "ULU"
+            # 16 sektor arah (Inggris)
+            bins_dir = np.arange(-11.25, 360, 22.5)
+            labels_dir_en = [
+                "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+                "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"
             ]
             df_wr["dir_sector"] = pd.cut(
                 df_wr["wd_deg"] % 360, bins=bins_dir,
-                labels=labels_dir, include_lowest=True, right=False
-            )
-            speed_bins = [0, 2, 5, 10, 20, 100]
-            speed_labels = ["<2", "2–5", "5–10", "10–20", ">20"]
-            df_wr["speed_class"] = pd.cut(
-                df_wr["ws"], bins=speed_bins,
-                labels=speed_labels, include_lowest=True
+                labels=labels_dir_en, include_lowest=True, right=False
             )
 
-            freq = (
-                df_wr.groupby(["dir_sector", "speed_class"])
-                .size().reset_index(name="count")
-            )
+            # Kelas kecepatan (semakin tinggi → warna makin panas)
+            speed_bins = [0, 2, 5, 10, 20, 100]
+            speed_labels = ["<2", "2–5", "5–10", "10–20", ">20"]
+            df_wr["speed_class"] = pd.cut(df_wr["ws"], bins=speed_bins, labels=speed_labels, include_lowest=True)
+
+            # Hitung frekuensi tiap kombinasi arah-kecepatan
+            freq = df_wr.groupby(["dir_sector", "speed_class"]).size().reset_index(name="count")
             freq["percent"] = freq["count"] / freq["count"].sum() * 100
+
+            # Azimuth arah (°)
             azimuth_map = {
-                "U": 0, "UT": 22.5, "TL": 45, "TLT": 67.5,
-                "T": 90, "TGS": 112.5, "TG": 135, "TGB": 157.5,
-                "S": 180, "SBD": 202.5, "BD": 225, "BDB": 247.5,
-                "B": 270, "BUL": 292.5, "UL": 315, "ULU": 337.5
+                "N": 0, "NNE": 22.5, "NE": 45, "ENE": 67.5, "E": 90, "ESE": 112.5,
+                "SE": 135, "SSE": 157.5, "S": 180, "SSW": 202.5, "SW": 225,
+                "WSW": 247.5, "W": 270, "WNW": 292.5, "NW": 315, "NNW": 337.5
             }
             freq["theta"] = freq["dir_sector"].map(azimuth_map)
 
+            # Gradasi warna kontras (biru → hijau → kuning → oranye → merah)
+            colors = ["#1E90FF", "#00FA9A", "#FFD700", "#FF8C00", "#FF0000"]
+
+            # Plot Windrose
             fig_wr = go.Figure()
-            colors = px.colors.sequential.Blues[::-1][:len(speed_labels)]
             for i, sc in enumerate(speed_labels):
                 subset = freq[freq["speed_class"] == sc]
                 fig_wr.add_trace(go.Barpolar(
@@ -197,20 +199,20 @@ try:
                 ))
 
             fig_wr.update_layout(
-                title="Distribusi Arah & Kecepatan Angin (%)",
+                title="Windrose — Wind Direction and Speed (%)",
                 polar=dict(
                     angularaxis=dict(
                         direction="clockwise", rotation=90,
                         tickmode="array",
                         tickvals=list(range(0, 360, 45)),
-                        ticktext=["U", "TL", "T", "TG", "S", "BD", "B", "BL"]
+                        ticktext=["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
                     ),
                     radialaxis=dict(
                         ticksuffix="%", angle=45,
                         showline=True, gridcolor="lightgray"
                     )
                 ),
-                legend_title="Kelas Kecepatan",
+                legend_title="Speed Class (m/s)",
                 template="plotly_white",
                 margin=dict(t=60, b=20, l=20, r=20)
             )
@@ -245,7 +247,6 @@ if show_table:
 
 st.markdown("---")
 st.header("Ekspor Data")
-
 csv = df_sel.to_csv(index=False)
 json_text = df_sel.to_json(orient="records", force_ascii=False, date_format="iso")
 col_dl1, col_dl2 = st.columns(2)
@@ -264,8 +265,8 @@ with col_dl2:
 st.markdown("""
 ---
 **Catatan:**
-- Waktu lokal diambil dari field `local_datetime` di API BMKG.  
-- Ikon cuaca mungkin tidak tampil tanpa koneksi internet.  
+- Windrose menampilkan distribusi arah & kecepatan angin (dalam bahasa Inggris).  
+- Semakin tinggi kecepatan angin, warna semakin "panas" (biru → merah).  
 - Gunakan mode layar penuh (F11) untuk tampilan optimal.
 """)
 st.caption("Aplikasi demo infografis prakiraan cuaca — data BMKG © 2025")
