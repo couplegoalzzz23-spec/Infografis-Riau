@@ -240,7 +240,7 @@ st.markdown(table_html, unsafe_allow_html=True)
 
 # === Windrose Chart ===
 st.markdown("---")
-st.header("Diagram Mawar Angin (Windrose)")
+st.header("Windrose")
 
 try:
     if "wd_deg" in df_sel.columns and "ws" in df_sel.columns:
@@ -320,3 +320,4 @@ st.markdown("""
 """)
 
 st.caption("Aplikasi demo infografis prakiraan cuaca — data BMKG")
+
