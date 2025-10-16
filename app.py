@@ -1,4 +1,4 @@
-perimport streamlit as st
+import streamlit as st
 import requests
 import pandas as pd
 import plotly.express as px
@@ -277,6 +277,7 @@ st.markdown("""
 
 
 st.caption("Aplikasi demo infografis prakiraan cuaca — data BMKG")
+
 
 
 
