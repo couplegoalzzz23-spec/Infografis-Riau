@@ -163,7 +163,7 @@ st.header("Grafik Tren — Parameter Utama")
 if df_sel.empty:
     st.warning("Tidak ada data di rentang waktu yang dipilih.")
 else:
-    fig_t = px.line(df_sel, x="local_datetime_dt", y="temperature", markers=True, title="Suhu (°C)")
+    fig_t = px.line(df_sel, x="local_datetime_dt", y="t", markers=True, title="Suhu (°C)")
     fig_hu = px.line(df_sel, x="local_datetime_dt", y="hu", markers=True, title="Kelembaban (%)")
     fig_ws = px.line(df_sel, x="local_datetime_dt", y="ws", markers=True, title="Kecepatan Angin (m/s)")
     fig_tp = px.bar(df_sel, x="local_datetime_dt", y="tp", title="Curah Hujan (mm)")
@@ -277,6 +277,7 @@ st.markdown("""
 
 
 st.caption("Aplikasi demo infografis prakiraan cuaca — data BMKG")
+
 
 
 
