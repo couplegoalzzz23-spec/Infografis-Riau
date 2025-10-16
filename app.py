@@ -12,6 +12,9 @@ from datetime import datetime
 st.set_page_config(page_title="Infografis Prakiraan Cuaca - BMKG", layout="wide")
 API_BASE = "https://cuaca.bmkg.go.id/api/df/v1/forecast/adm"
 
+# Konstanta konversi
+MS_TO_KT = 1.94384  # 1 m/s = 1.94384 knot
+
 @st.cache_data(ttl=300)
 def fetch_forecast(adm1: str):
     """Fetch forecast JSON dari BMKG API berdasarkan kode ADM1."""
@@ -104,6 +107,14 @@ if df.empty:
     st.stop()
 
 # =====================================
+# 💨 KONVERSI KE KNOT
+# =====================================
+if "ws" in df.columns:
+    df["ws_kt"] = df["ws"] * MS_TO_KT
+else:
+    df["ws_kt"] = np.nan
+
+# =====================================
 # ⏰ RENTANG WAKTU
 # =====================================
 df = df.sort_values(by="utc_datetime_dt")
@@ -126,37 +137,39 @@ df_sel = df.loc[mask].copy()
 # =====================================
 r1c1, r1c2, r1c3, r1c4 = st.columns(4)
 now_row = df_sel.iloc[0] if not df_sel.empty else df.iloc[0]
-with r1c1: st.metric("Suhu (°C)", f"{now_row.get('t', '—')}°C")
-with r1c2: st.metric("Kelembaban (%)", f"{now_row.get('hu', '—')}%")
-with r1c3: st.metric("Kecepatan Angin (m/s)", f"{now_row.get('ws', '—')} m/s")
+with r1c1: st.metric("Temperature (°C)", f"{now_row.get('t', '—')}°C")
+with r1c2: st.metric("Humidity (%)", f"{now_row.get('hu', '—')}%")
+with r1c3: 
+    ws_kt = now_row.get('ws', 0) * MS_TO_KT
+    st.metric("Wind Speed (KT)", f"{ws_kt:.1f} KT")
 with r1c4:
     tcc, tp = now_row.get('tcc', '—'), now_row.get('tp', '—')
-    st.metric("Awan & Curah Hujan", f"TP: {tp} mm", f"Cloud: {tcc}%")
+    st.metric("Cloud & Rainfall", f"Rain: {tp} mm", f"Cloud: {tcc}%")
 
 # =====================================
 # 📊 GRAFIK TREN
 # =====================================
 st.markdown("---")
-st.header("Grafik Tren — Parameter Utama")
+st.header("Trend Graphs — Main Weather Parameters")
 
 if not df_sel.empty:
     c1, c2 = st.columns(2)
     with c1:
-        st.plotly_chart(px.line(df_sel, x="local_datetime_dt", y="t", markers=True, title="Suhu (°C)"), use_container_width=True)
-        st.plotly_chart(px.line(df_sel, x="local_datetime_dt", y="hu", markers=True, title="Kelembaban (%)"), use_container_width=True)
+        st.plotly_chart(px.line(df_sel, x="local_datetime_dt", y="t", markers=True, title="Temperature (°C)"), use_container_width=True)
+        st.plotly_chart(px.line(df_sel, x="local_datetime_dt", y="hu", markers=True, title="Humidity (%)"), use_container_width=True)
     with c2:
-        st.plotly_chart(px.line(df_sel, x="local_datetime_dt", y="ws", markers=True, title="Kecepatan Angin (m/s)"), use_container_width=True)
-        st.plotly_chart(px.bar(df_sel, x="local_datetime_dt", y="tp", title="Curah Hujan (mm)"), use_container_width=True)
+        st.plotly_chart(px.line(df_sel, x="local_datetime_dt", y="ws_kt", markers=True, title="Wind Speed (KT)"), use_container_width=True)
+        st.plotly_chart(px.bar(df_sel, x="local_datetime_dt", y="tp", title="Rainfall (mm)"), use_container_width=True)
 
 # =====================================
-# 🌬️ WINDROSE CHART (ENGLISH + KONTRAS)
+# 🌬️ WINDROSE CHART (ENGLISH + KONTRAS + KT)
 # =====================================
 st.markdown("---")
-st.header("Windrose Diagram — Wind Direction & Speed Distribution")
+st.header("Windrose Diagram — Wind Direction & Speed (KT)")
 
 try:
-    if "wd_deg" in df_sel.columns and "ws" in df_sel.columns:
-        df_wr = df_sel.dropna(subset=["wd_deg", "ws"]).copy()
+    if "wd_deg" in df_sel.columns and "ws_kt" in df_sel.columns:
+        df_wr = df_sel.dropna(subset=["wd_deg", "ws_kt"]).copy()
         if not df_wr.empty:
             # 16 sektor arah (Inggris)
             bins_dir = np.arange(-11.25, 360, 22.5)
@@ -169,12 +182,12 @@ try:
                 labels=labels_dir_en, include_lowest=True, right=False
             )
 
-            # Kelas kecepatan (semakin tinggi → warna makin panas)
-            speed_bins = [0, 2, 5, 10, 20, 100]
-            speed_labels = ["<2", "2–5", "5–10", "10–20", ">20"]
-            df_wr["speed_class"] = pd.cut(df_wr["ws"], bins=speed_bins, labels=speed_labels, include_lowest=True)
+            # Kelas kecepatan dalam knot (lebih realistis untuk penerbangan)
+            speed_bins = [0, 5, 10, 20, 30, 50, 100]
+            speed_labels = ["<5", "5–10", "10–20", "20–30", "30–50", ">50"]
+            df_wr["speed_class"] = pd.cut(df_wr["ws_kt"], bins=speed_bins, labels=speed_labels, include_lowest=True)
 
-            # Hitung frekuensi tiap kombinasi arah-kecepatan
+            # Hitung frekuensi
             freq = df_wr.groupby(["dir_sector", "speed_class"]).size().reset_index(name="count")
             freq["percent"] = freq["count"] / freq["count"].sum() * 100
 
@@ -186,20 +199,19 @@ try:
             }
             freq["theta"] = freq["dir_sector"].map(azimuth_map)
 
-            # Gradasi warna kontras (biru → hijau → kuning → oranye → merah)
-            colors = ["#1E90FF", "#00FA9A", "#FFD700", "#FF8C00", "#FF0000"]
+            # Warna kontras: biru → hijau → kuning → oranye → merah → ungu
+            colors = ["#1E90FF", "#00FA9A", "#FFD700", "#FF8C00", "#FF0000", "#8B008B"]
 
-            # Plot Windrose
             fig_wr = go.Figure()
             for i, sc in enumerate(speed_labels):
                 subset = freq[freq["speed_class"] == sc]
                 fig_wr.add_trace(go.Barpolar(
                     r=subset["percent"], theta=subset["theta"],
-                    name=f"{sc} m/s", marker_color=colors[i], opacity=0.9
+                    name=f"{sc} KT", marker_color=colors[i], opacity=0.9
                 ))
 
             fig_wr.update_layout(
-                title="Windrose — Wind Direction and Speed (%)",
+                title="Windrose — Wind Direction and Speed (KT)",
                 polar=dict(
                     angularaxis=dict(
                         direction="clockwise", rotation=90,
@@ -212,50 +224,51 @@ try:
                         showline=True, gridcolor="lightgray"
                     )
                 ),
-                legend_title="Speed Class (m/s)",
+                legend_title="Wind Speed Class (KT)",
                 template="plotly_white",
                 margin=dict(t=60, b=20, l=20, r=20)
             )
             st.plotly_chart(fig_wr, use_container_width=True)
         else:
-            st.info("Data arah atau kecepatan angin tidak tersedia.")
+            st.info("No valid wind direction or speed data available.")
     else:
-        st.info("Kolom 'wd_deg' dan 'ws' tidak ditemukan dalam data.")
+        st.info("Columns 'wd_deg' or 'ws' not found in dataset.")
 except Exception as e:
-    st.warning(f"Gagal membuat windrose: {e}")
+    st.warning(f"Failed to generate windrose: {e}")
 
 # =====================================
 # 🗺️ PETA
 # =====================================
 if show_map:
     st.markdown("---")
-    st.header("Peta Lokasi")
+    st.header("Location Map")
     try:
         lat = float(selected_entry.get("lokasi", {}).get("lat", 0))
         lon = float(selected_entry.get("lokasi", {}).get("lon", 0))
         st.map(pd.DataFrame({"lat": [lat], "lon": [lon]}))
     except Exception as e:
-        st.warning(f"Peta tidak tersedia: {e}")
+        st.warning(f"Map unavailable: {e}")
 
 # =====================================
 # 📋 TABEL DATA & EKSPOR
 # =====================================
 if show_table:
     st.markdown("---")
-    st.header("Tabel Data (Mentah)")
+    st.header("Raw Data Table")
     st.dataframe(df_sel)
 
 st.markdown("---")
-st.header("Ekspor Data")
+st.header("Export Data")
+
 csv = df_sel.to_csv(index=False)
 json_text = df_sel.to_json(orient="records", force_ascii=False, date_format="iso")
 col_dl1, col_dl2 = st.columns(2)
 with col_dl1:
-    st.download_button("Unduh CSV", data=csv,
+    st.download_button("Download CSV", data=csv,
                        file_name=f"forecast_adm1_{adm1}_{loc_choice}.csv",
                        mime="text/csv")
 with col_dl2:
-    st.download_button("Unduh JSON", data=json_text,
+    st.download_button("Download JSON", data=json_text,
                        file_name=f"forecast_adm1_{adm1}_{loc_choice}.json",
                        mime="application/json")
 
@@ -264,9 +277,9 @@ with col_dl2:
 # =====================================
 st.markdown("""
 ---
-**Catatan:**
-- Windrose menampilkan distribusi arah & kecepatan angin (dalam bahasa Inggris).  
-- Semakin tinggi kecepatan angin, warna semakin "panas" (biru → merah).  
-- Gunakan mode layar penuh (F11) untuk tampilan optimal.
+**Notes:**
+- All wind speeds converted to **knots (KT)** for aviation relevance.  
+- Windrose uses English direction names and color contrast (blue → red).  
+- Use fullscreen (F11) for the best viewing experience.
 """)
-st.caption("Aplikasi demo infografis prakiraan cuaca — data BMKG © 2025")
+st.caption("Interactive Weather Forecast Infographic — BMKG Data © 2025")
