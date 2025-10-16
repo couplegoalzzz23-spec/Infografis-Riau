@@ -143,7 +143,7 @@ now_row = df_sel.iloc[0] if not df_sel.empty else df.iloc[0]
 
 with r1c1:
     st.markdown("**Suhu**")
-    st.metric(label="°C", value=f"{now_row.get('t', '—')}°C")
+    st.metric(label="°C", value=f"{now_row.get('temperature', '—')}°C")
 with r1c2:
     st.markdown("**Kelembaban**")
     st.metric(label="RH (%)", value=f"{now_row.get('hu', '—')} %")
@@ -277,6 +277,7 @@ st.markdown("""
 
 
 st.caption("Aplikasi demo infografis prakiraan cuaca — data BMKG")
+
 
 
 
