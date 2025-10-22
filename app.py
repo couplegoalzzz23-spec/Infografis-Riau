@@ -9,9 +9,9 @@ from datetime import datetime
 # =====================================
 # ⚙️ KONFIGURASI DASAR
 # =====================================
-st.set_page_config(page_title="Tactical Weather Dashboard — BMKG", layout="wide")
+st.set_page_config(page_title="Tactical Weather Ops — BMKG", layout="wide")
 
-# 🌑 CSS TEMA MILITER
+# 🌑 CSS — MILITARY STYLE + RADAR ANIMATION
 st.markdown("""
 <style>
 body {
@@ -19,15 +19,21 @@ body {
     color: #cfd2c3;
     font-family: "Consolas", "Roboto Mono", monospace;
 }
+
+/* --- Judul dan warna aksen --- */
 h1, h2, h3, h4 {
     color: #a9df52;
     text-transform: uppercase;
     letter-spacing: 1px;
 }
+
+/* --- Sidebar --- */
 section[data-testid="stSidebar"] {
     background-color: #111;
     color: #d0d3ca;
 }
+
+/* --- Tombol --- */
 .stButton>button {
     background-color: #1a2a1f;
     color: #a9df52;
@@ -39,20 +45,55 @@ section[data-testid="stSidebar"] {
     background-color: #2b3b2b;
     border-color: #a9df52;
 }
+
+/* --- Metric hijau --- */
 div[data-testid="stMetricValue"] {
     color: #a9df52 !important;
 }
+
+/* --- Radar animation --- */
+.radar {
+  position: relative;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(20,255,50,0.05) 20%, transparent 21%),
+              radial-gradient(circle, rgba(20,255,50,0.1) 10%, transparent 11%);
+  background-size: 20px 20px;
+  border: 2px solid #33ff55;
+  overflow: hidden;
+  margin: auto;
+  box-shadow: 0 0 20px #33ff55;
+}
+.radar:before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0;
+  width: 50%; height: 2px;
+  background: linear-gradient(90deg, #33ff55, transparent);
+  transform-origin: 100% 50%;
+  animation: sweep 2.5s linear infinite;
+}
+@keyframes sweep {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* --- Footer --- */
 hr, .stDivider {
     border-top: 1px solid #2f3a2f;
 }
 </style>
 """, unsafe_allow_html=True)
 
+# =====================================
+# 📡 KONFIGURASI API
+# =====================================
 API_BASE = "https://cuaca.bmkg.go.id/api/df/v1/forecast/adm"
-MS_TO_KT = 1.94384  # 1 m/s = 1.94384 knot
+MS_TO_KT = 1.94384  # konversi ke knot
 
 # =====================================
-# 📡 FUNGSI UTILITAS
+# 🧰 UTILITAS
 # =====================================
 @st.cache_data(ttl=300)
 def fetch_forecast(adm1: str):
@@ -82,32 +123,33 @@ def flatten_cuaca_entry(entry):
                 r["utc_datetime_dt"], r["local_datetime_dt"] = pd.NaT, pd.NaT
             rows.append(r)
     df = pd.DataFrame(rows)
-    numeric_cols = ["t", "tcc", "tp", "wd_deg", "ws", "hu", "vs"]
-    for c in numeric_cols:
+    for c in ["t", "tcc", "tp", "wd_deg", "ws", "hu", "vs"]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
     return df
 
 # =====================================
-# 🎚️ SIDEBAR — PANEL KONTROL
+# 🎚️ SIDEBAR
 # =====================================
 with st.sidebar:
     st.title("🛰️ Tactical Controls")
     adm1 = st.text_input("Province Code (ADM1)", value="32")
+    st.markdown("<div class='radar'></div>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align:center; color:#5f5;'>Scanning Weather...</p>", unsafe_allow_html=True)
     refresh = st.button("🔄 Fetch Data")
     st.markdown("---")
     show_map = st.checkbox("Show Map", value=True)
     show_table = st.checkbox("Show Table", value=False)
     st.markdown("---")
-    st.caption("Data Source: BMKG API\nTheme: Military Tactical Ops")
+    st.caption("Data Source: BMKG API\nTheme: Military Ops v1.0")
 
 # =====================================
-# 📡 AMBIL DATA
+# 📡 PENGAMBILAN DATA
 # =====================================
-st.title("Tactical Weather Dashboard")
-st.markdown("*Source: BMKG Forecast API*")
+st.title("Tactical Weather Operations Dashboard")
+st.markdown("*Source: BMKG Forecast API — Live Data*")
 
-with st.spinner("🛰️ Acquiring Weather Data..."):
+with st.spinner("🛰️ Acquiring weather intelligence..."):
     try:
         raw = fetch_forecast(adm1)
     except Exception as e:
@@ -123,8 +165,7 @@ mapping = {}
 for e in entries:
     lok = e.get("lokasi", {})
     label = lok.get("kotkab") or lok.get("adm2") or f"Location {len(mapping)+1}"
-    key = lok.get("adm2") or lok.get("kotkab") or str(len(mapping)+1)
-    mapping[label] = {"key": key, "entry": e}
+    mapping[label] = {"entry": e}
 
 col1, col2 = st.columns([2, 1])
 with col1:
@@ -138,28 +179,20 @@ if df.empty:
     st.warning("No valid weather data found.")
     st.stop()
 
-# =====================================
-# 💨 KONVERSI KE KNOT
-# =====================================
 df["ws_kt"] = df["ws"] * MS_TO_KT
 
 # =====================================
-# 🕓 RENTANG WAKTU — FIX TANPA ERROR
+# 🕓 SLIDER WAKTU TANPA ERROR
 # =====================================
 df = df.sort_values("utc_datetime_dt")
 
-# pastikan waktu valid
 if df["local_datetime_dt"].isna().all():
     st.error("No valid datetime available in dataset.")
     st.stop()
 
-min_dt = df["local_datetime_dt"].dropna().min()
-max_dt = df["local_datetime_dt"].dropna().max()
+min_dt = df["local_datetime_dt"].dropna().min().to_pydatetime()
+max_dt = df["local_datetime_dt"].dropna().max().to_pydatetime()
 
-min_dt = pd.to_datetime(min_dt).to_pydatetime()
-max_dt = pd.to_datetime(max_dt).to_pydatetime()
-
-# slider aman
 start_dt = st.sidebar.slider(
     "Time Range (Local)",
     min_value=min_dt,
@@ -173,46 +206,39 @@ mask = (df["local_datetime_dt"] >= pd.to_datetime(start_dt[0])) & \
 df_sel = df.loc[mask].copy()
 
 # =====================================
-# 🧭 PANEL — METRIC STATUS
+# ⚡ METRIC PANEL
 # =====================================
 st.markdown("---")
 st.subheader("⚡ Tactical Weather Status")
 
-r1c1, r1c2, r1c3, r1c4 = st.columns(4)
 now = df_sel.iloc[0]
-with r1c1: st.metric("TEMP (°C)", f"{now.get('t', '—')}°C")
-with r1c2: st.metric("HUMIDITY", f"{now.get('hu', '—')}%")
-with r1c3: st.metric("WIND (KT)", f"{now.get('ws_kt', 0):.1f}")
-with r1c4: st.metric("RAIN (mm)", f"{now.get('tp', '—')}")
+c1, c2, c3, c4 = st.columns(4)
+with c1: st.metric("TEMP (°C)", f"{now.get('t', '—')}°C")
+with c2: st.metric("HUMIDITY", f"{now.get('hu', '—')}%")
+with c3: st.metric("WIND (KT)", f"{now.get('ws_kt', 0):.1f}")
+with c4: st.metric("RAIN (mm)", f"{now.get('tp', '—')}")
 
 # =====================================
-# 📈 TREN PARAMETER
+# 📈 TREND GRAFIK
 # =====================================
 st.markdown("---")
 st.subheader("📊 Parameter Trends")
 
 c1, c2 = st.columns(2)
 with c1:
-    fig_t = px.line(df_sel, x="local_datetime_dt", y="t",
-                    title="Temperature (°C)", markers=True,
-                    color_discrete_sequence=["#a9df52"])
-    st.plotly_chart(fig_t, use_container_width=True)
-
-    fig_h = px.line(df_sel, x="local_datetime_dt", y="hu",
-                    title="Humidity (%)", markers=True,
-                    color_discrete_sequence=["#00ffbf"])
-    st.plotly_chart(fig_h, use_container_width=True)
-
+    st.plotly_chart(px.line(df_sel, x="local_datetime_dt", y="t",
+        title="Temperature (°C)", markers=True,
+        color_discrete_sequence=["#a9df52"]), use_container_width=True)
+    st.plotly_chart(px.line(df_sel, x="local_datetime_dt", y="hu",
+        title="Humidity (%)", markers=True,
+        color_discrete_sequence=["#00ffbf"]), use_container_width=True)
 with c2:
-    fig_w = px.line(df_sel, x="local_datetime_dt", y="ws_kt",
-                    title="Wind Speed (KT)", markers=True,
-                    color_discrete_sequence=["#00ffbf"])
-    st.plotly_chart(fig_w, use_container_width=True)
-
-    fig_r = px.bar(df_sel, x="local_datetime_dt", y="tp",
-                   title="Rainfall (mm)",
-                   color_discrete_sequence=["#ffbf00"])
-    st.plotly_chart(fig_r, use_container_width=True)
+    st.plotly_chart(px.line(df_sel, x="local_datetime_dt", y="ws_kt",
+        title="Wind Speed (KT)", markers=True,
+        color_discrete_sequence=["#00ffbf"]), use_container_width=True)
+    st.plotly_chart(px.bar(df_sel, x="local_datetime_dt", y="tp",
+        title="Rainfall (mm)",
+        color_discrete_sequence=["#ffbf00"]), use_container_width=True)
 
 # =====================================
 # 🌪️ WINDROSE
@@ -224,42 +250,32 @@ if "wd_deg" in df_sel.columns and "ws_kt" in df_sel.columns:
     df_wr = df_sel.dropna(subset=["wd_deg", "ws_kt"])
     if not df_wr.empty:
         bins_dir = np.arange(-11.25, 360, 22.5)
-        labels_dir = [
-            "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
-            "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"
-        ]
+        labels_dir = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"]
         df_wr["dir_sector"] = pd.cut(df_wr["wd_deg"] % 360, bins=bins_dir, labels=labels_dir, include_lowest=True)
-        speed_bins = [0, 5, 10, 20, 30, 50, 100]
-        speed_labels = ["<5", "5–10", "10–20", "20–30", "30–50", ">50"]
+        speed_bins = [0,5,10,20,30,50,100]
+        speed_labels = ["<5","5–10","10–20","20–30","30–50",">50"]
         df_wr["speed_class"] = pd.cut(df_wr["ws_kt"], bins=speed_bins, labels=speed_labels, include_lowest=True)
-        freq = df_wr.groupby(["dir_sector", "speed_class"]).size().reset_index(name="count")
-        freq["percent"] = freq["count"] / freq["count"].sum() * 100
-
-        azimuth_map = {
-            "N": 0, "NNE": 22.5, "NE": 45, "ENE": 67.5, "E": 90, "ESE": 112.5,
-            "SE": 135, "SSE": 157.5, "S": 180, "SSW": 202.5, "SW": 225,
-            "WSW": 247.5, "W": 270, "WNW": 292.5, "NW": 315, "NNW": 337.5
-        }
-        freq["theta"] = freq["dir_sector"].map(azimuth_map)
-
-        tactical_colors = ["#00ffbf", "#80ff00", "#d0ff00", "#ffb300", "#ff6600", "#ff0033"]
+        freq = df_wr.groupby(["dir_sector","speed_class"]).size().reset_index(name="count")
+        freq["percent"] = freq["count"]/freq["count"].sum()*100
+        az_map = {"N":0,"NNE":22.5,"NE":45,"ENE":67.5,"E":90,"ESE":112.5,"SE":135,"SSE":157.5,
+                  "S":180,"SSW":202.5,"SW":225,"WSW":247.5,"W":270,"WNW":292.5,"NW":315,"NNW":337.5}
+        freq["theta"] = freq["dir_sector"].map(az_map)
+        colors = ["#00ffbf","#80ff00","#d0ff00","#ffb300","#ff6600","#ff0033"]
         fig_wr = go.Figure()
         for i, sc in enumerate(speed_labels):
-            subset = freq[freq["speed_class"] == sc]
+            subset = freq[freq["speed_class"]==sc]
             fig_wr.add_trace(go.Barpolar(
                 r=subset["percent"], theta=subset["theta"],
-                name=f"{sc} KT", marker_color=tactical_colors[i], opacity=0.85
+                name=f"{sc} KT", marker_color=colors[i], opacity=0.85
             ))
-
         fig_wr.update_layout(
             title="Windrose (KT)",
             polar=dict(
-                angularaxis=dict(direction="clockwise", rotation=90, tickvals=list(range(0, 360, 45))),
+                angularaxis=dict(direction="clockwise", rotation=90, tickvals=list(range(0,360,45))),
                 radialaxis=dict(ticksuffix="%", showline=True, gridcolor="#333")
             ),
             legend_title="Wind Speed Class",
-            template="plotly_dark",
-            margin=dict(t=50, b=10, l=10, r=10)
+            template="plotly_dark"
         )
         st.plotly_chart(fig_wr, use_container_width=True)
 
@@ -268,7 +284,7 @@ if "wd_deg" in df_sel.columns and "ws_kt" in df_sel.columns:
 # =====================================
 if show_map:
     st.markdown("---")
-    st.subheader("🗺️ Tactical Map View")
+    st.subheader("🗺️ Tactical Map")
     try:
         lat = float(selected_entry.get("lokasi", {}).get("lat", 0))
         lon = float(selected_entry.get("lokasi", {}).get("lon", 0))
@@ -277,11 +293,11 @@ if show_map:
         st.warning(f"Map unavailable: {e}")
 
 # =====================================
-# 📋 TABEL DATA
+# 📋 TABEL
 # =====================================
 if show_table:
     st.markdown("---")
-    st.subheader("📋 Data Table")
+    st.subheader("📋 Forecast Table")
     st.dataframe(df_sel)
 
 # =====================================
@@ -292,10 +308,10 @@ st.subheader("💾 Export Data")
 
 csv = df_sel.to_csv(index=False)
 json_text = df_sel.to_json(orient="records", force_ascii=False, date_format="iso")
-col_dl1, col_dl2 = st.columns(2)
-with col_dl1:
+c1, c2 = st.columns(2)
+with c1:
     st.download_button("⬇️ Download CSV", data=csv, file_name=f"{adm1}_{loc_choice}.csv", mime="text/csv")
-with col_dl2:
+with c2:
     st.download_button("⬇️ Download JSON", data=json_text, file_name=f"{adm1}_{loc_choice}.json", mime="application/json")
 
 # =====================================
@@ -304,7 +320,7 @@ with col_dl2:
 st.markdown("""
 ---
 <div style="text-align:center; color:#7a7; font-size:0.9rem;">
-Tactical Weather Intelligence System — BMKG Data © 2025<br>
-Designed in Military Ops Theme | Powered by Streamlit + Plotly
+Tactical Weather Ops Dashboard — BMKG Data © 2025<br>
+Designed with Military Precision | Powered by Streamlit + Plotly
 </div>
 """, unsafe_allow_html=True)
