@@ -14,7 +14,6 @@ st.set_page_config(page_title="Tactical Weather Dashboard — BMKG", layout="wid
 # 🌑 CSS TEMA MILITER
 st.markdown("""
 <style>
-/* --- GLOBAL --- */
 body {
     background-color: #0b0c0c;
     color: #cfd2c3;
@@ -100,7 +99,7 @@ with st.sidebar:
     show_map = st.checkbox("Show Map", value=True)
     show_table = st.checkbox("Show Table", value=False)
     st.markdown("---")
-    st.caption("Data Source: BMKG API\n\nTheme: Military Tactical Ops")
+    st.caption("Data Source: BMKG API\nTheme: Military Tactical Ops")
 
 # =====================================
 # 📡 AMBIL DATA
@@ -145,16 +144,30 @@ if df.empty:
 df["ws_kt"] = df["ws"] * MS_TO_KT
 
 # =====================================
-# ⏱️ RENTANG WAKTU
+# 🕓 RENTANG WAKTU — FIX TANPA ERROR
 # =====================================
 df = df.sort_values("utc_datetime_dt")
-min_dt, max_dt = df["local_datetime_dt"].min(), df["local_datetime_dt"].max()
-st.sidebar.markdown("---")
+
+# pastikan waktu valid
+if df["local_datetime_dt"].isna().all():
+    st.error("No valid datetime available in dataset.")
+    st.stop()
+
+min_dt = df["local_datetime_dt"].dropna().min()
+max_dt = df["local_datetime_dt"].dropna().max()
+
+min_dt = pd.to_datetime(min_dt).to_pydatetime()
+max_dt = pd.to_datetime(max_dt).to_pydatetime()
+
+# slider aman
 start_dt = st.sidebar.slider(
     "Time Range (Local)",
-    min_value=min_dt, max_value=max_dt,
-    value=(min_dt, max_dt), format="DD-MM HH:mm"
+    min_value=min_dt,
+    max_value=max_dt,
+    value=(min_dt, max_dt),
+    step=pd.Timedelta(hours=3)
 )
+
 mask = (df["local_datetime_dt"] >= pd.to_datetime(start_dt[0])) & \
        (df["local_datetime_dt"] <= pd.to_datetime(start_dt[1]))
 df_sel = df.loc[mask].copy()
